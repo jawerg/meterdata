@@ -17,7 +17,8 @@ select
         day(tstp),
         hour(tstp),
         0,
-        0
+        0,
+        'UTC'
     ) as ts,
     avg(`energy(kWh/hh)`) as ec
 from {{ source('meterdata', 'meter_halfhourly_dataset') }}
