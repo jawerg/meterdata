@@ -7,9 +7,9 @@ from {{ source('meterdata', 'meter_halfhourly_dataset') }}
 union all
 
 select id, ts, ec
-from {{ ref('gap_closer') }}
+from {{ ref('interpolation_long_intervals') }}
 
 union all
 
 select id, ts, ec
-from {{ ref('interpolation_30_min') }}
+from {{ ref('interpolation_short_intervals') }}

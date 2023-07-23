@@ -1,5 +1,12 @@
 {{config(order_by = ('id', 'ts'))}}
 
+/*
+    As most timeseries do not contain gaps, or at least not of their full length, this
+    is meant to reduce the size of data to be interpolated by exactly finding the
+    boundaries of each "gap". This means, a single id can have multiple gaps.
+    The idea is to carry the information of the bounds (current and next) through.
+
+ */
 
 select
   LCLid                         as id,

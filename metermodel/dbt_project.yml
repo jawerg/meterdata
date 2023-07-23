@@ -39,3 +39,6 @@ models:
     slp:
       schema: slp
       +materialized: table
+    gaps:
+      schema: gaps
+      +materialized: table
