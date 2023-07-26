@@ -3,7 +3,7 @@ version: 2
 
 sources:
   - name: meterdata
-    database: meterdata
+    database: meterdata_raw
     tables:
       - name: meter_daily_dataset
       - name: meter_halfhourly_dataset

@@ -43,7 +43,7 @@ def load_file_into_according_clickhouse_table(query_name: str):
         client.command(
             textwrap.dedent(
                 f"""
-                insert into meterdata.meter_{query} 
+                insert into meterdata_raw.meter_{query} 
                 select * from file('{query}.parquet', Parquet)
                 """.strip()
             )
