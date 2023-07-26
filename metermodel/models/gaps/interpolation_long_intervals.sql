@@ -14,8 +14,8 @@ select
 from {{ ref('boundaries_by_date') }} as bbd
 inner join {{ ref('standard_load_profile') }} as slp on bbd.dt = slp.dt
 inner join {{ ref('participants') }} as p on bbd.id = p.id
-where slp.ts >= bbd.ts_start
-  and slp.ts <= bbd.ts_end
+where slp.ts >= bbd.start_ts
+  and slp.ts <= bbd.end_ts
 
 /*
 union all
