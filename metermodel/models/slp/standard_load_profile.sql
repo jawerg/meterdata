@@ -2,26 +2,26 @@
 
 
 with years as (
-    select distinct year(tstp) as year
-    from {{ source('meterdata', 'meter_halfhourly_dataset') }}
+    select distinct year(ts) as year
+    from {{ ref('clean_source_data') }}
 )
 select
     makeDate(
         years.year,
-        month(tstp),
-        day(tstp)
+        month(ts),
+        day(ts)
     ) as dt,
     makeDateTime(
         years.year,
-        month(tstp),
-        day(tstp),
-        hour(tstp),
+        month(ts),
+        day(ts),
+        hour(ts),
         0,
         0,
         'UTC'
     ) as ts,
-    avg(`energy(kWh/hh)`) as ec
-from {{ source('meterdata', 'meter_halfhourly_dataset') }}
+    avg(ec) as ec
+from {{ ref('clean_source_data') }}
      cross join years
 group by dt, ts
 order by dt, ts

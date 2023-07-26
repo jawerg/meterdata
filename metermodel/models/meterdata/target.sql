@@ -1,8 +1,8 @@
 {{config(order_by = ('id', 'ts'))}}
 
 
-select LCLid as id, tstp as ts, `energy(kWh/hh)` as ec
-from {{ source('meterdata', 'meter_halfhourly_dataset') }}
+select id, ts, ec
+from {{ ref('clean_source_data') }}
 
 union all
 

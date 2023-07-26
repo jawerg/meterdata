@@ -17,6 +17,7 @@ inner join {{ ref('participants') }} as p on bbd.id = p.id
 where slp.ts >= bbd.ts_start
   and slp.ts <= bbd.ts_end
 
+/*
 union all
 
 select id, ts, ec
@@ -28,3 +29,4 @@ select id, next_ts, next_ec
 from {{ ref('boundaries') }}
 
 order by id, ts
+*/

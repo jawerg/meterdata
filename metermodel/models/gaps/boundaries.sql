@@ -8,13 +8,8 @@
 
  */
 
-select
-  LCLid                         as id,
-  tstp                          as ts,
-  neighbor(tstp, 1)             as next_ts,
-  `energy(kWh/hh)`              as ec,
-  neighbor(`energy(kWh/hh)`, 1) as next_ec
-from {{ source('meterdata', 'meter_halfhourly_dataset') }}
-where next_ts - tstp > 60 * 60 -- fill gaps larger than one hours
-  and neighbor(LCLid, 1) = LCLid
+select id, ts, neighbor(ts, 1) as next_ts, ec, neighbor(ec, 1) as next_ec
+from {{ ref('clean_source_data') }}
+where next_ts - ts > 60 * 60 -- fill gaps larger than one hours
+  and neighbor(id, 1) = id
 order by id, ts
