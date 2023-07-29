@@ -1,4 +1,4 @@
-{{config(order_by = ('id', 'dt'))}}
+{{config(order_by = ('id', 'gap_id', 'dt'))}}
 
 /*
     In order to reduce the amount of data joined here, we will filter on the date of
@@ -10,6 +10,7 @@
 
 select
     id,
+    gap_id,
     {{ gap_fill_bounds(ts, next_ts) }}
 from {{ ref('boundaries') }}
 order by id, dt, start_ts

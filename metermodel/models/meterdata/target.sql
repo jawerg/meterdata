@@ -8,3 +8,13 @@ union all
 
 select id, ts, ec
 from {{ ref('interpolation_long_intervals') }}
+
+union all
+
+select id, ts, ec
+from {{ ref('interpolation_short_intervals') }}
+
+union all
+
+select id, ts, ec
+from {{ ref('interpolation_clean_data') }}
