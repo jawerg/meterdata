@@ -1,4 +1,4 @@
-{{config(order_by = ('dt', 'ts'))}}
+{{config(order_by=('dt', 'ts'))}}
 
 
 with years as (

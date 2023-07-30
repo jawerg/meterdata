@@ -68,3 +68,9 @@ halfhourly_dataset: load_file_into_according_clickhouse_table: 12.8965 seconds.
 375M	data/raw/daily_dataset
  10G	data/raw
 ```
+## Issues
+
+It took me a while to understand that the neighor function has a huge downside: It scans
+only for the current data block, which is determined by max_block_size. A remedy to this
+issue has been described in 
+[GitHub](https://github.com/ClickHouse/ClickHouse/issues/8975#issuecomment-581614849).

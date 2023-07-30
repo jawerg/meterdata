@@ -1,4 +1,4 @@
-{{config(order_by = ('id', 'ts'))}}
+{{config(order_by=('id', 'ts'))}}
 
 with
 

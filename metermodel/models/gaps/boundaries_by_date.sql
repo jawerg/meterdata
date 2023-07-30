@@ -1,4 +1,4 @@
-{{config(order_by = ('id', 'gap_id', 'dt', 'start_ts'))}}
+{{config(order_by=('id', 'gap_id', 'dt', 'start_ts'))}}
 
 /*
     In order to reduce the amount of data joined here, we will filter on the date of

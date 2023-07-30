@@ -1,4 +1,4 @@
-{{config(order_by = ('id'))}}
+{{config(order_by=('id'))}}
 
 
 with ( select avg(ec) from {{ ref('clean_source_data') }} ) as global_avg_ec

@@ -1,4 +1,4 @@
-{{config(order_by = ('id', 'ts'))}}
+{{config(order_by=('id', 'ts'))}}
 
 /*
     As most timeseries do not contain gaps, or at least not of their full length, this

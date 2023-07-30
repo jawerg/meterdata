@@ -1,4 +1,4 @@
-{{config(order_by = ('id', 'gap_id', 'ts'))}}
+{{config(order_by=('id', 'gap_id', 'ts'))}}
 
     
 /* 

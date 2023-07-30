@@ -1,4 +1,4 @@
-{{config(order_by = ('id', 'gap_id', 'ts'))}}
+{{config(order_by=('id', 'gap_id', 'ts'))}}
 
 with
 interpolation_long_interval_bounds as (
