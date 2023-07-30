@@ -12,20 +12,22 @@ select
     id,
     gap_id,
     arrayJoin(
-        arrayMap(
-            x -> toDate(x, 'UTC'),
-            range(toUInt32(ts), toUInt32(next_ts), 24 * 60 * 60)
+        arrayDistinct(
+                arrayMap(
+                    x -> toDate(x, 'UTC'),
+                    range(toUInt32(ts), toUInt32(next_ts), 30 * 60)
+                )
         )
     ) as dt,
     case
         when dt == ts::Date
-            then greatest(ts, dt + interval 0 hour)
+            then greatest(ts, dt::Timestamp('UTC') + interval 0 hour)
         else makeDateTime(year(dt), month(dt), day(dt), 0, 0, 0, 'UTC')
     end as start_ts,
     case
         when dt != next_ts::Date
             then  makeDateTime(year(dt), month(dt), day(dt), 23, 0, 0, 'UTC')
-        else least(next_ts, dt + interval 23 hour)
+        else least(next_ts, dt::Timestamp('UTC') + interval 23 hour + interval 30 minute)
     end as end_ts
 from {{ ref('boundaries') }}
 order by id, dt, start_ts
