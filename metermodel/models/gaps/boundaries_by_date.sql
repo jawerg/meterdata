@@ -1,4 +1,4 @@
-{{config(order_by = ('id', 'gap_id', 'dt'))}}
+{{config(order_by = ('id', 'gap_id', 'dt', 'start_ts'))}}
 
 /*
     In order to reduce the amount of data joined here, we will filter on the date of
@@ -30,4 +30,3 @@ select
         else least(next_ts, dt::Timestamp('UTC') + interval 23 hour + interval 30 minute)
     end as end_ts
 from {{ ref('boundaries') }}
-order by id, dt, start_ts

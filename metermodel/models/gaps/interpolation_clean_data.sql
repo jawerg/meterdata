@@ -1,3 +1,5 @@
+{{config(order_by = ('id', 'ts'))}}
+
 with
 
 gap_closer as (
