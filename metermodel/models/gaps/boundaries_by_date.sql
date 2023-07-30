@@ -30,3 +30,4 @@ select
         else least(next_ts, dt::Timestamp('UTC') + interval 23 hour + interval 30 minute)
     end as end_ts
 from {{ ref('boundaries') }}
+order by id, gap_id, dt, start_ts

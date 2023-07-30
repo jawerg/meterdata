@@ -21,3 +21,4 @@ where slp.ts >= bbd.start_ts
     select id, ts
     from meterdata_gaps.interpolation_long_interval_bounds
 )
+order by id, gap_id, ts

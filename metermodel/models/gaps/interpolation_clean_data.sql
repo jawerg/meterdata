@@ -15,3 +15,4 @@ gap_closer as (
 
 select id, shifted_ts as ts, ec
 from gap_closer
+order by id, ts
