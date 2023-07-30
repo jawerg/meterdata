@@ -13,7 +13,7 @@ gap_closer as (
 )
 select id, shifted_ts as ts, ec
 from gap_closer
-where (id, shifted_ts) not in (
-        select id, ts
-        from {{ ref('interpolation_long_interval_bounds') }}
-    )
+where (id, ts) not in (
+    select id, ts
+    from meterdata_gaps.interpolation_long_interval_bounds
+)

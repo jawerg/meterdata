@@ -1,15 +1,15 @@
 with baseline as (
-    select id, ts, ec
+    select id, ts
     from {{ ref('clean_source_data') }}
 
     union all
 
-    select id, ts, ec
+    select id, ts
     from {{ ref('interpolation_long_intervals') }}
 
     union all
 
-    select id, ts, ec
+    select id, ts
     from {{ ref('interpolation_short_intervals') }}
 )
 
