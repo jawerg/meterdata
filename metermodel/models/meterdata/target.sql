@@ -1,9 +1,14 @@
-{{config(order_by=('id', 'ts'))}}
+{{
+    config(
+        partition_by='halfMD5(id) % 64',
+        order_by=('id', 'ts')
+    )
+}}
 
 with
 data_union as (
     select id, ts, ec
-    from {{ ref('clean_source_data') }}
+    from {{ ref('clean_and_partitioned_source_data') }}
 
     union all
 

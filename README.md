@@ -74,3 +74,5 @@ It took me a while to understand that the neighor function has a huge downside: 
 only for the current data block, which is determined by max_block_size. A remedy to this
 issue has been described in 
 [GitHub](https://github.com/ClickHouse/ClickHouse/issues/8975#issuecomment-581614849).
+It seems that this can also be circumvented by using partitions. However, this doesn't
+sound like a solution that scales well.

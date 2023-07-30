@@ -1,4 +1,9 @@
-{{config(order_by=('id', 'ts'))}}
+{{
+    config(
+        partition_by='halfMD5(id) % 64',
+        order_by=('id', 'ts')
+    )
+}}
 
 /*
     As most timeseries do not contain gaps, or at least not of their full length, this
@@ -15,7 +20,8 @@ select
     neighbor(ts, 1) as next_ts,
     ec,
     neighbor(ec, 1) as next_ec
-from {{ ref('clean_source_data') }}
+from {{ ref('clean_and_partitioned_source_data') }}
 where next_ts - ts > 30 * 60 -- fill gaps larger than 30 mins
   and neighbor(id, 1) = id
 order by id, ts
+settings optimize_read_in_order = 0

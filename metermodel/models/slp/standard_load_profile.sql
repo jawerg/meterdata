@@ -3,7 +3,7 @@
 
 with years as (
     select distinct year(ts) as year
-    from {{ ref('clean_source_data') }}
+    from {{ ref('clean_and_partitioned_source_data') }}
 )
 select
     makeDate(
@@ -21,7 +21,7 @@ select
         'UTC'
     ) as ts,
     avg(ec) as ec
-from {{ ref('clean_source_data') }}
+from {{ ref('clean_and_partitioned_source_data') }}
      cross join years
 group by dt, ts
 order by dt, ts

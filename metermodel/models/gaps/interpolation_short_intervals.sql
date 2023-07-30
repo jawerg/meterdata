@@ -1,4 +1,9 @@
-{{config(order_by=('id', 'ts'))}}
+{{
+    config(
+        partition_by='halfMD5(id) % 64',
+        order_by=('id', 'ts')
+    )
+}}
 
 with
 gap_closer as (
@@ -19,3 +24,4 @@ where (id, shifted_ts) not in (
     from meterdata_gaps.interpolation_long_interval_bounds
 )
 order by id, ts
+settings optimize_read_in_order = 0

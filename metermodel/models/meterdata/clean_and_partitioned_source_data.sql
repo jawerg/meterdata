@@ -1,4 +1,9 @@
-{{ config(materialized='view') }}
+{{
+    config(
+        partition_by='halfMD5(id) % 64',
+        order_by=('id', 'ts')
+    )
+}}
 
 select
     LCLid            as id,
