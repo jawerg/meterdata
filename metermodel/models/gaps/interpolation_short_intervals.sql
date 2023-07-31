@@ -21,7 +21,7 @@ select id, shifted_ts as ts, interpolated_ec as ec
 from gap_closer
 where (id, shifted_ts) not in (
     select id, ts
-    from meterdata_gaps.interpolation_long_interval_bounds
+    from {{ ref('interpolation_long_interval_bounds') }}
 )
 order by id, ts
 settings optimize_read_in_order = 0
