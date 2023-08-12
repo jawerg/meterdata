@@ -16,37 +16,37 @@ def measure_execution_time(func):
         result = func(*args, **kwargs)
         end_time = time.time()
         execution_time = end_time - start_time
-        print(f"{kwargs.get('query_name')}: {func.__name__}: {execution_time:.4f} seconds.")
+        print(f"{kwargs.get('table_name')}: {func.__name__}: {execution_time:.4f} seconds.")
         return result
 
     return wrapper
 
 
 @measure_execution_time
-def derive_parquet_data_from_csv_with_ddb_query(query_name: str):
+def derive_parquet_data_from_csv_with_ddb_query(table_name: str):
     with duckdb.connect(database=":memory:") as conn:
-        query_file_path = Path("queries") / "ddb" / f"{query_name}.sql"
+        query_file_path = Path("queries") / "ddb" / f"{table_name}.sql"
         with open(query_file_path) as qry_file:
             conn.execute(qry_file.read())
 
 
 @measure_execution_time
-def move_resulting_file_to_clickhouse_files_folder(query_name: str):
+def move_resulting_file_to_clickhouse_files_folder(table_name: str):
     # Move the resulting parquet file to the clickhouse folder
     shutil.copy(
-        src=f"data/ready/{query_name}.parquet",
-        dst=f"/opt/homebrew/var/lib/clickhouse/user_files/{query_name}.parquet",
+        src=f"data/ready/{table_name}.parquet",
+        dst=f"/opt/homebrew/var/lib/clickhouse/user_files/{table_name}.parquet",
     )
 
 
 @measure_execution_time
-def load_file_into_according_clickhouse_table(query_name: str):
+def load_file_into_according_clickhouse_table(table_name: str):
     with clickhouse_connect.get_client(host="localhost") as client:
         client.command(
             textwrap.dedent(
                 f"""
-                insert into meterdata_raw.meter_{query_name} 
-                select * from file('{query_name}.parquet', Parquet)
+                insert into meterdata_raw.meter_{table_name} 
+                select * from file('{table_name}.parquet', Parquet)
                 """.strip()
             )
         )
@@ -80,11 +80,11 @@ def process_and_insert_row_group(args):
 
 
 @measure_execution_time
-def insert_file_content(query_name: str):
+def insert_file_content(table_name: str):
     with Client("localhost") as client:
-        client.execute(query=f"truncate table meterdata_raw.meter_{query_name}")
+        client.execute(query=f"truncate table meterdata_raw.meter_{table_name}")
 
-    file_path = f"data/ready/{query_name}.parquet"
+    file_path = f"data/ready/{table_name}.parquet"
     parquet_file = pq.ParquetFile(file_path)
     print(f"Number of row groups: {parquet_file.num_row_groups}")
 
@@ -98,12 +98,12 @@ def insert_file_content(query_name: str):
 
 
 @measure_execution_time
-def core(query_name: str):
-    derive_parquet_data_from_csv_with_ddb_query(query_name=query_name)
-    move_resulting_file_to_clickhouse_files_folder(query_name=query_name)
-    load_file_into_according_clickhouse_table(query_name=query_name)
+def core(table_name: str):
+    derive_parquet_data_from_csv_with_ddb_query(table_name=table_name)
+    move_resulting_file_to_clickhouse_files_folder(table_name=table_name)
+    load_file_into_according_clickhouse_table(table_name=table_name)
 
 
 if __name__ == "__main__":
-    core(query_name="halfhourly_dataset")
-    insert_file_content(query_name="halfhourly_dataset")
+    core(table_name="halfhourly_dataset")
+    insert_file_content(table_name="halfhourly_dataset")
