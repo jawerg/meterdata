@@ -131,7 +131,7 @@ def core(table_name: str):
 
 
 if __name__ == "__main__":
-    # core(table_name="halfhourly_dataset")
-    # truncate_table(table_name="halfhourly_dataset")
-    # insert_file_content(table_name="halfhourly_dataset")
-    insert_file_content_into_postgres(table_name="halfhourly_dataset")
+    core(table_name="halfhourly_dataset")
+    truncate_table(table_name="halfhourly_dataset")
+    insert_file_content(table_name="halfhourly_dataset")
+    # insert_file_content_into_postgres(table_name="halfhourly_dataset")

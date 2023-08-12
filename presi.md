@@ -6,7 +6,7 @@ theme: default
 # Agenda
 
 - showcase of open smart meter data import and interpolation.
-- review process of loading data using duckdbt as gateway to parallelism.
+- review process of loading data using duckdb as gateway to parallelism.
 - usage of OLAP database (clickhouse) and dbt for query handling and auto-docs.
 - comparison of ballparks for disk-usage and query speed
 
@@ -114,7 +114,7 @@ def insert_data(data):
         )
 ```
 
-Note that there is nothing clickhouse specific. But maybe, the parallelization works much better. However, I didn't try this strategy on Postgres yet (not true anymore 🤭). Thus, I've completely shifted the focus of the slides.
+Note that there is nothing clickhouse specific. But maybe, the parallelization works much better. However, I didn't try this strategy on Postgres yet (not true anymore 🤭). Thus, I've completely shifted the focus of the slides to come.
 
 ---
 
@@ -182,15 +182,15 @@ This was probably the moment, when the story of those slides completely changed 
 It was just too simple as not to try this in Postgres.
 
 ```py
+from psycopg2.extras import execute_values
+
 def insert_data_into_postgres(data):
     # I left some trivial stuff out for ease of read
     qry = "insert into raw.meter_halfhourly_dataset_base(id, ts, val) values %s"
     execute_values(cur, qry, data)
 ```
 
-And well, it works. It's slower than for Clickhouse, but faster than parsing the CSV with Python in a sequential manner. If I recall correctly, this needed around 45 minutes (although this sounds way too much more and I guess there was more happening).
-
-So, let's stick to the numbers we've got here.
+And well, it works. It's slower than for Clickhouse, but nevertheless a basic proof of concept of how load data into postgres in parallel. The CPUs haven't been cycling at 100% during import.
 
 ---
 
@@ -232,7 +232,7 @@ Maybe, it becomes tangible here how compression works using column-storage:
 - A single `id` appears repeatedly, so the data structure will only store something like "id x repeats 1000 times here". Thus, there is only little cost of using a String with the external id.
 - At the same time the `ts` has some regularity, such that there's no need to store the unix timestamp itself, but rather the difference between two neighboring rows ([Delta Encoding](https://altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse))
 - Keep in mind, that compression not only reduces storage cost, but additionally reduces the cost of scanning data, as there is simply less to scan.
-- Later, we'll also see that this allows for fast copies of data, when moving data to a new table.
+- We'll also see that this allows for **fast copies of data**, when moving data to new tables.
     - So, let's start to create some tables or models as they are called in dbt.
 
 ---
