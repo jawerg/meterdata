@@ -6,8 +6,10 @@ from pathlib import Path
 
 import clickhouse_connect
 import duckdb
+import psycopg2
 import pyarrow.parquet as pq
 from clickhouse_driver import Client
+from psycopg2.extras import execute_values
 
 
 def measure_execution_time(func):
@@ -53,47 +55,76 @@ def load_file_into_according_clickhouse_table(table_name: str):
 
 
 @measure_execution_time
+def truncate_table(table_name: str):
+    with Client("localhost") as client:
+        client.execute(query=f"truncate table meterdata_raw.meter_{table_name}")
+
+
+def get_data_from_row_group(file_path, row_group_index):
+    start = time.time()
+    parquet_file = pq.ParquetFile(file_path)  # Open the Parquet file within the worker process
+    table = parquet_file.read_row_group(row_group_index)
+    table = table.rename_columns(["id", "ts", "val"])
+    print(f"read: {time.time() - start:.4f} seconds.")
+    start = time.time()
+    data = list(zip(*[tuple(row) for row in table.to_pydict().values()]))
+    print(f"transpose: {time.time() - start:.4f} seconds.")
+    return data
+
+
+@measure_execution_time
 def insert_data(data):
     with Client("localhost") as client:
         client.execute(
-            query=textwrap.dedent(
-                """
-                insert into meterdata_raw.meter_halfhourly_dataset (
-                    `LCLid`,
-                    `tstp`,
-                    `energy(kWh/hh)`
-                ) 
-                values
-                """
-            ).strip(),
+            query="insert into meterdata_raw.meter_halfhourly_dataset (id, ts, val) values",
             params=data,
             types_check=True,
         )
 
 
-def process_and_insert_row_group(args):
+def insert_row_group(args):
     file_path, row_group_index = args
-    parquet_file = pq.ParquetFile(file_path)  # Open the Parquet file within the worker process
-    table = parquet_file.read_row_group(row_group_index)
-    table = table.rename_columns(["id", "ts", "val"])
-    data = list(zip(*[tuple(row) for row in table.to_pydict().values()]))
+    data = get_data_from_row_group(file_path=file_path, row_group_index=row_group_index)
     insert_data(data=data)
 
 
 @measure_execution_time
 def insert_file_content(table_name: str):
-    with Client("localhost") as client:
-        client.execute(query=f"truncate table meterdata_raw.meter_{table_name}")
-
     file_path = f"data/ready/{table_name}.parquet"
     parquet_file = pq.ParquetFile(file_path)
     print(f"Number of row groups: {parquet_file.num_row_groups}")
-
-    # Create a pool of worker processes
     with Pool() as pool:
-        # Use the pool to apply the process_and_insert_row_group function to each row group
+        pool.map(insert_row_group, [(file_path, i) for i in range(parquet_file.num_row_groups)])
+
+
+def insert_data_into_postgres(data):
+    dbname, user, password, host, port = "meterdata", "postgres", "postgres", "localhost", "5432"
+    conn = psycopg2.connect(dbname=dbname, user=user, password=password, host=host, port=port)
+    cur = conn.cursor()
+
+    qry = "insert into raw.meter_halfhourly_dataset_base(id, ts, val) values %s"
+    execute_values(cur, qry, data)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def insert_row_group_into_postgres(args):
+    file_path, row_group_index = args
+    data = get_data_from_row_group(file_path=file_path, row_group_index=row_group_index)
+    start = time.time()
+    insert_data_into_postgres(data=data)
+    print(f"insert: {time.time() - start:.4f} seconds.")
+
+
+@measure_execution_time
+def insert_file_content_into_postgres(table_name: str):
+    file_path = f"data/ready/{table_name}.parquet"
+    parquet_file = pq.ParquetFile(file_path)
+    print(f"Number of row groups: {parquet_file.num_row_groups}")
+    with Pool() as pool:
         pool.map(
-            process_and_insert_row_group,
+            insert_row_group_into_postgres,
             [(file_path, i) for i in range(parquet_file.num_row_groups)],
         )
 
@@ -106,5 +137,7 @@ def core(table_name: str):
 
 
 if __name__ == "__main__":
-    core(table_name="halfhourly_dataset")
+    # core(table_name="halfhourly_dataset")
+    # truncate_table(table_name="halfhourly_dataset")
     # insert_file_content(table_name="halfhourly_dataset")
+    insert_file_content_into_postgres(table_name="halfhourly_dataset")

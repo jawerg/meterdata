@@ -19,6 +19,6 @@ where slp.ts >= bbd.start_ts
   and slp.ts <= bbd.end_ts
   and (id, ts) not in (
     select id, ts
-    from meterdata_gaps.interpolation_long_interval_bounds
+    from {{ ref('interpolation_long_interval_bounds') }}
 )
 order by id, gap_id, ts

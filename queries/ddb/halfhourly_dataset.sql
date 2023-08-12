@@ -8,10 +8,7 @@ copy (
             delim = ',',
             header = true,
             nullstr = 'Null',
-            columns ={
-                'LCLid': 'VARCHAR',
-                'tstp': 'TIMESTAMP',
-                'energy(kWh/hh)': 'FLOAT' }
+            columns ={ 'LCLid': 'VARCHAR', 'tstp': 'TIMESTAMP', 'energy(kWh/hh)': 'FLOAT' }
         )
     where "energy(kWh/hh)" is not null
     )
@@ -19,4 +16,4 @@ copy (
         format 'parquet',
         compression 'zstd',
         row_group_size 2000000
-    );
+);
