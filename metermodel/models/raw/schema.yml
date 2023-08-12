@@ -7,3 +7,16 @@ sources:
     tables:
       - name: meter_daily_dataset
       - name: meter_halfhourly_dataset
+        columns:
+          - name: LCLid
+            description: External ID of smartmeter
+            tests:
+              - not_null
+          - name: tstp
+            description: Timestamp of measurement in UTC
+            tests:
+              - not_null
+          - name: energy(kWh/hh)
+            description: Energy usage in kWh
+            tests:
+              - not_null
