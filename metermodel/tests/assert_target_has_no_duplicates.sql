@@ -1,16 +1,11 @@
 with baseline as (
     select id, ts
-    from {{ ref('clean_and_partitioned_source_data') }}
+    from {{ ref('clean_source_data') }}
 
     union all
 
     select id, ts
     from {{ ref('interpolation_long_intervals') }}
-
-    union all
-
-    select id, ts
-    from {{ ref('interpolation_short_intervals') }}
 )
 
 select id

@@ -8,15 +8,15 @@ sources:
       - name: meter_daily_dataset
       - name: meter_halfhourly_dataset
         columns:
-          - name: LCLid
+          - name: id
             description: External ID of smartmeter
             tests:
               - not_null
-          - name: tstp
+          - name: ts
             description: Timestamp of measurement in UTC
             tests:
               - not_null
-          - name: energy(kWh/hh)
+          - name: val
             description: Energy usage in kWh
             tests:
               - not_null

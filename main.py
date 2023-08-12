@@ -75,6 +75,7 @@ def process_and_insert_row_group(args):
     file_path, row_group_index = args
     parquet_file = pq.ParquetFile(file_path)  # Open the Parquet file within the worker process
     table = parquet_file.read_row_group(row_group_index)
+    table = table.rename_columns(["id", "ts", "val"])
     data = list(zip(*[tuple(row) for row in table.to_pydict().values()]))
     insert_data(data=data)
 
@@ -106,4 +107,4 @@ def core(table_name: str):
 
 if __name__ == "__main__":
     core(table_name="halfhourly_dataset")
-    insert_file_content(table_name="halfhourly_dataset")
+    # insert_file_content(table_name="halfhourly_dataset")

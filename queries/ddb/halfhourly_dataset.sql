@@ -1,5 +1,8 @@
 copy (
-    select *
+    select
+        "LCLid" as id,
+        "tstp" as ts,
+        "energy(kWh/hh)" as val
     from read_csv(
             'data/raw/halfhourly_dataset/halfhourly_dataset/block_*.csv',
             delim = ',',
@@ -7,8 +10,8 @@ copy (
             nullstr = 'Null',
             columns ={
                 'LCLid': 'VARCHAR',
-            'tstp': 'TIMESTAMP',
-            'energy(kWh/hh)': 'FLOAT' }
+                'tstp': 'TIMESTAMP',
+                'energy(kWh/hh)': 'FLOAT' }
         )
     where "energy(kWh/hh)" is not null
     )

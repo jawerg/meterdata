@@ -1,4 +1,4 @@
-create or replace table meter_daily_dataset
+create or replace table meterdata_raw.meter_daily_dataset
 (
     "LCLid"         String,
     "day"           date,
@@ -14,13 +14,13 @@ create or replace table meter_daily_dataset
         primary key ("LCLid", "day")
         order by ("LCLid", "day");
 
-create or replace table meter_halfhourly_dataset
+create or replace table meterdata_raw.meter_halfhourly_dataset
 (
-    "LCLid"          String,
-    "tstp"           DateTime('UTC'),
-    "energy(kWh/hh)" Float32
+    id  String,
+    ts  DateTime('UTC'),
+    val Float32
 )
     engine = MergeTree
-        primary key ("LCLid", "tstp")
-        order by ("LCLid", "tstp")
+        primary key (id, ts)
+        order by (id, ts)
 ;

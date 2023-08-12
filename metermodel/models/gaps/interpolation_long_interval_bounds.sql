@@ -1,13 +1,8 @@
-{{
-    config(
-        partition_by='halfMD5(id) % 64',
-        order_by=('id', 'gap_id', 'ts')
-    )
-}}
+{{config(order_by=('id', 'gap_id', 'ts'))}}
 
 with
 interpolation_long_interval_bounds as (
-    select id, gap_id, ts, ec
+    select id, gap_id, ts, val
     from {{ ref('boundaries') }}
 
     union distinct
@@ -16,6 +11,6 @@ interpolation_long_interval_bounds as (
     from {{ ref('boundaries') }}
 )
 
-select id, gap_id, ts, ec
+select id, gap_id, ts, val
 from interpolation_long_interval_bounds
 order by id, gap_id, ts
