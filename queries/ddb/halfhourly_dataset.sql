@@ -10,5 +10,10 @@ copy (
             'tstp': 'TIMESTAMP',
             'energy(kWh/hh)': 'FLOAT' }
         )
+    where "energy(kWh/hh)" is not null
     )
-    to 'data/ready/halfhourly_dataset.parquet' (format 'parquet', compression 'zstd');
+    to 'data/ready/halfhourly_dataset.parquet' (
+        format 'parquet',
+        compression 'zstd',
+        row_group_size 2000000
+    );

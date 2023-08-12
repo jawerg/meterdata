@@ -1,11 +1,13 @@
 import shutil
 import textwrap
+import time
+from multiprocessing import Pool
 from pathlib import Path
 
 import clickhouse_connect
 import duckdb
-
-import time
+import pyarrow.parquet as pq
+from clickhouse_driver import Client
 
 
 def measure_execution_time(func):
@@ -31,7 +33,7 @@ def derive_parquet_data_from_csv_with_ddb_query(query_name: str):
 @measure_execution_time
 def move_resulting_file_to_clickhouse_files_folder(query_name: str):
     # Move the resulting parquet file to the clickhouse folder
-    shutil.move(
+    shutil.copy(
         src=f"data/ready/{query_name}.parquet",
         dst=f"/opt/homebrew/var/lib/clickhouse/user_files/{query_name}.parquet",
     )
@@ -43,10 +45,55 @@ def load_file_into_according_clickhouse_table(query_name: str):
         client.command(
             textwrap.dedent(
                 f"""
-                insert into meterdata_raw.meter_{query} 
-                select * from file('{query}.parquet', Parquet)
+                insert into meterdata_raw.meter_{query_name} 
+                select * from file('{query_name}.parquet', Parquet)
                 """.strip()
             )
+        )
+
+
+@measure_execution_time
+def insert_data(data):
+    with Client("localhost") as client:
+        client.execute(
+            query=textwrap.dedent(
+                """
+                insert into meterdata_raw.meter_halfhourly_dataset (
+                    `LCLid`,
+                    `tstp`,
+                    `energy(kWh/hh)`
+                ) 
+                values
+                """
+            ).strip(),
+            params=data,
+            types_check=True,
+        )
+
+
+def process_and_insert_row_group(args):
+    file_path, row_group_index = args
+    parquet_file = pq.ParquetFile(file_path)  # Open the Parquet file within the worker process
+    table = parquet_file.read_row_group(row_group_index)
+    data = list(zip(*[tuple(row) for row in table.to_pydict().values()]))
+    insert_data(data=data)
+
+
+@measure_execution_time
+def insert_file_content(query_name: str):
+    with Client("localhost") as client:
+        client.execute(query=f"truncate table meterdata_raw.meter_{query_name}")
+
+    file_path = f"data/ready/{query_name}.parquet"
+    parquet_file = pq.ParquetFile(file_path)
+    print(f"Number of row groups: {parquet_file.num_row_groups}")
+
+    # Create a pool of worker processes
+    with Pool() as pool:
+        # Use the pool to apply the process_and_insert_row_group function to each row group
+        pool.map(
+            process_and_insert_row_group,
+            [(file_path, i) for i in range(parquet_file.num_row_groups)],
         )
 
 
@@ -58,9 +105,5 @@ def core(query_name: str):
 
 
 if __name__ == "__main__":
-    csv2pqt_queries = [
-        "daily_dataset",
-        "halfhourly_dataset",
-    ]
-    for query in csv2pqt_queries:
-        core(query_name=query)
+    core(query_name="halfhourly_dataset")
+    insert_file_content(query_name="halfhourly_dataset")
