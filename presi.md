@@ -21,10 +21,13 @@ theme: default
 
 clickhouse...
 
-- has its own SQL dialect and has some fine-grained controls when designing tables (e.g. engines and order by)
+- was created for real-time analytics of large datasets.
+- has its own SQL dialect and has some fine-grained controls when designing
+  tables (e.g. engines and order by).
 - is a column-orientated warehouse, which allows to compress the stored data.
-  - allows for fast aggregation of means and standard deviations (as used for SE)
-- uses sparse indexes on sorted tables
+  - allows for fast aggregation of means and standard deviations (as used for
+    SE).
+- uses sparse indexes on sorted tables.
   - thus minimal primary key size, despite large table sizes.
   - note: Postgres Index became larger than memory.
 
@@ -32,7 +35,9 @@ clickhouse...
 
 ## Clickhouse DDL
 
-Imagine we've got some data about [smart meters in London from kaggle](https://www.kaggle.com/datasets/jeanmidev/smart-meters-in-london), which already rests in the following clickhouse table:
+Imagine we've got some data about [smart meters in London from
+kaggle](https://www.kaggle.com/datasets/jeanmidev/smart-meters-in-london), which
+already rests in the following clickhouse table:
 
 ```sql
 create or replace table meter_halfhourly_dataset (
@@ -53,11 +58,19 @@ Let's talk later about how the data got there and in what time.
 
 Maybe, it becomes tangible here how compression works using column-storage:
 
-- A single `id` appears repeatedly, so the data structure will only store something like "id x repeats 1000 times here". Thus, there is only little cost of using a String with the external id.
-- At the same time the `ts` has some regularity, such that there's no need to store the unix timestamp itself, but rather the difference between two neighboring rows ([Delta Encoding](https://altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse))
-- Keep in mind, that compression not only reduces storage cost, but additionally reduces the cost of scanning data.
+- A single `id` appears repeatedly, so the data structure will only store
+  something like "id x repeats 1000 times here". Thus, there is only little cost
+  of using a String with the external id.
+- At the same time the `ts` has some regularity, such that there's no need to
+  store the unix timestamp itself, but rather the difference between two
+  neighboring rows ([Delta
+  Encoding](https://altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse))
+- Keep in mind, that compression not only reduces storage cost, but additionally
+  reduces the cost of scanning data.
 
-The latter also hints to why large batches of inserted data are more efficient in Clickhouse: Finding patterns to compress becomes more efficient if there is more "training data".
+The latter also hints to why large batches of inserted data are more efficient
+in Clickhouse: Finding patterns to compress becomes more efficient if there is
+more "training data".
 
 ---
 
@@ -65,16 +78,22 @@ The latter also hints to why large batches of inserted data are more efficient i
 
 dbt is...
 
-- is an open source solution to programatically design data transformations in a data warehouse.
-- uses jinja templates which allows to re-use components and implement simple control flows (if-else, for loops, etc).
+- an abbreviation for _data build tool_ and reflects only the T of ETL (Extract,
+  Transform, Load) patterns in a DWH context.
+- is an open source solution to programatically design data transformations in a
+  data warehouse.
+- uses jinja templates which allows to re-use components and implement simple
+  control flows (if-else, for loops, etc).
 - includes a testing framework.
 - auto-generates documentation of pipelines, tests, tables and columns.
-- simplyfies writing data pipelines, as it reduces the input needed to a simple query and handles all the orchestration around it.
+- simplyfies writing data pipelines, as it reduces the input needed to a simple
+  query and handles all the orchestration around it.
 
 
 ## Clickhouse + dbt: Defining a schema
 
-dbt must learn about tables that are not managed by it, thus sources are described in yaml notation, which are used to auto-gen docs later.
+dbt must learn about tables that are not managed by it, thus sources are
+described in yaml notation, which are used to auto-gen docs later.
 
 ```yml
 version: 2
@@ -96,7 +115,9 @@ sources:
 
 ## Clickhouse + dbt: First Model
 
-A model is only a query that results in a table or view and expressed in SQL (here, clickhouse dialect). Let's kick of with a simple candidate here:
+A model is only a query that results in a table or view and expressed in SQL
+(here, clickhouse dialect). Let's kick of with a simple candidate here, that
+shows to the previously defined table will be referenced.
 
 ```sql
 {{config(order_by=('id'))}}
@@ -111,13 +132,16 @@ group by id
 order by id
 ```
 
-Note that all jinja stuff `{{ }}` is later build (thus build tool) by dbt. The configs are clickhouse specific. Here, a MergeTree is used. If no primary key is given, the order by clause applies.
+Note that all jinja stuff `{{ }}` is later build (thus build tool) by dbt. The
+configs are clickhouse specific. Here, a MergeTree is used. If no primary key is
+given, the order by clause applies.
 
 ---
 
 ## Clickhouse + dbt: Second Model
 
-Another quite simple example, which will however help us to illustrate how tests work in the next step:
+Another quite simple example, which will however help us to illustrate how tests
+work in the next step:
 
 ```sql
 {{config(order_by=('dt', 'ts'))}}
@@ -140,9 +164,13 @@ order by dt, ts
 
 ## Clickhouse + dbt: First Test
 
-Oftentimes, tests in SQL are defined, such that the expected result is empty. This allows to test for unexpected data. Here, I want the standard load profile to be in one hour intervals from the first to last timestamp.
+Oftentimes, tests in SQL are defined, such that the expected result is empty.
+This allows to test for unexpected data. Here, I want the standard load profile
+to be in one hour intervals from the first to last timestamp.
 
-Clickhouse's neighbor keyword: Similar to Postgres' `lead(ts) over (partition by id order by ts)`. Recall that the order by clause is set in the table definition, which enables this to be fast ⚡️
+Clickhouse's neighbor keyword: Similar to Postgres' `lead(ts) over (partition by
+id order by ts)`. Recall that the order by clause is set in the table
+definition, which enables this to be fast ⚡️
 
 ```sql
 select ts
@@ -151,6 +179,7 @@ where ts - neighbor(ts, 1) > 60 * 60
   and year(neighbor(ts, 1)) != 1970 -- last row would be succeeded by 1970-01-01 00:00:00
 ```
 
-Core take-away: dbt-defined tables are referenced using the `ref` syntax, which allows dbt to build a DAG.
+Core take-away: dbt-defined tables are referenced using the `source` and `ref`
+syntax, which allows dbt to build a DAG.
 
 - Note: Show `dbt docs generate` + `dbt docs serve`
