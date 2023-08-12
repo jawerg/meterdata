@@ -6,6 +6,7 @@ theme: default
 # Agenda
 
 - showcase of open smart meter data import and interpolation.
+- review process of loading data using duckdbt as gateway to parallelism.
 - usage of OLAP database (clickhouse) and dbt for query handling and auto-docs.
 - comparison of ballparks for disk-usage and query speed
 
@@ -14,7 +15,6 @@ theme: default
 - I've neither used clickhouse or dbt professionally.
 - Thus, the way it's done won't be best practice with high probability.
 - But I guess that was the idea, just try to see what's in there...
-- Thus, some calculations may be off
 
 So, let's go 🙃
 
@@ -22,16 +22,16 @@ So, let's go 🙃
 
 # Data used here
 
-A quick sample of the data, such that labels and usage aren't too misterious:
+A quick sample of the [kaggle](https://www.kaggle.com/datasets/jeanmidev/smart-meters-in-london) data, such that labels and usage aren't too misterious:
 
-| LCLid     | tstp                | energy(kWh/hh) |
-| --------- | ------------------- |--------------- |
-| MAC000002 | 2013-06-03 13:30:00 |          0.096 |
-| MAC000002 | 2013-06-03 14:00:00 |          0.129 |
-| MAC000246 | 2013-06-03 13:30:00 |          0.022 |
-| MAC000246 | 2013-06-03 14:00:00 |          0.044 |
-| MAC003223 | 2013-06-03 13:30:00 |          0.232 |
-| MAC003223 | 2013-06-03 14:00:00 |          0.127 |
+| LCLid [id] | tstp [ts]           | energy(kWh/hh) [val] |
+| ---------- | ------------------- |--------------------- |
+| MAC000002  | 2013-06-03 13:30:00 |                0.096 |
+| MAC000002  | 2013-06-03 14:00:00 |                0.129 |
+| MAC000246  | 2013-06-03 13:30:00 |                0.022 |
+| MAC000246  | 2013-06-03 14:00:00 |                0.044 |
+| MAC003223  | 2013-06-03 13:30:00 |                0.232 |
+| MAC003223  | 2013-06-03 14:00:00 |                0.127 |
 
 ---
 
@@ -50,7 +50,7 @@ clickhouse...
 
 ## Clickhouse DDL
 
-Imagine we've got some data about [smart meters in London from kaggle](https://www.kaggle.com/datasets/jeanmidev/smart-meters-in-london), which already rests in the following clickhouse table:
+Imagine we've got some data about [smart meters in London from kaggle](https://www.kaggle.com/datasets/jeanmidev/smart-meters-in-london)
 
 ```sql
 create or replace table meterdata_raw.meter_halfhourly_dataset (
@@ -63,7 +63,165 @@ primary key (id, ts)
 order by (id, ts);
 ```
 
-Let's talk later about how the data got there and in what time.
+Let's talk now about how the data got there and in what time.
+
+---
+
+
+## Loading Data into Clickhouse Pt.1
+
+Use duckdb to generate one Parquet file from csv with filter and large row groups:
+
+```sql
+copy (
+    select
+        "LCLid"          as id,
+        "tstp"           as ts,
+        "energy(kWh/hh)" as val
+    from read_csv(
+            'data/raw/halfhourly_dataset/halfhourly_dataset/block_*.csv', -- regex possible
+            delim   = ',',
+            header  = true,
+            nullstr = 'Null',
+            columns ={ 'LCLid': 'VARCHAR', 'tstp': 'TIMESTAMP', 'energy(kWh/hh)': 'FLOAT' }
+        )
+    where "energy(kWh/hh)" is not null
+    )
+    to 'data/ready/halfhourly_dataset.parquet' (
+        format         'parquet',
+        compression    'zstd',
+        row_group_size 2000000  -- this one does the magic trick 🪄
+);
+```
+
+---
+
+## Loading Data into Clickhouse Pt.2.1
+
+Let's quickly walk through how to load the resulting single 335MB parquet file.
+
+In the end, the insert will look very familiar:
+
+```py
+from clickhouse_driver import Client
+
+def insert_data(data):
+    with Client("localhost") as client:
+        client.execute(
+            query="insert into meterdata_raw.meter_halfhourly_dataset (id, ts, val) values",
+            params=data,
+            types_check=True,
+        )
+```
+
+Note that there is nothing clickhouse specific. But maybe, the parallelization works much better. However, I didn't try this strategy on Postgres yet (not true anymore 🤭). Thus, I've completely shifted the focus of the slides.
+
+---
+
+## Loading Data into Clickhouse Pt.2.2
+
+Each row group is designed to be of around 2 Mrows here. I've added the time and percentange of each step.
+
+```py
+def insert_row_group(args):
+    file_path, row_group_index = args
+
+    # read (0.4%, 0.03s)
+    parquet_file = pq.ParquetFile(file_path)  # Open the Parquet file within the worker process
+    table = parquet_file.read_row_group(row_group_index)
+    table = table.rename_columns(["id", "ts", "val"])
+
+    # transpose (44.8%, 3.43s)
+    data = list(zip(*[tuple(row) for row in table.to_pydict().values()]))  # 😕
+
+    # insert (54.8%, 4.19s)
+    insert_data(data=data)
+```
+
+Note that we have **84 row groups** here, the measurements are an **average over those 84 runs**.
+
+---
+
+## Loading Data into Clickhouse Pt.2.3
+
+The magic is in the row groups, and allows the single file to be read in parallel from multiple processes without blocking 🤯
+
+```py
+def insert_file_content(table_name: str):
+    file_path = f"data/ready/{table_name}.parquet"
+    parquet_file = pq.ParquetFile(file_path)
+    print(f"Number of row groups: {parquet_file.num_row_groups}")
+    with Pool() as pool:
+        pool.map(
+            insert_row_group,
+            [(file_path, i) for i in range(parquet_file.num_row_groups)],
+        )
+```
+
+Running this on the M1 with 8 cores, takes 90 seconds in total for 84 row groups of 2 Mrows. Each row group takes approximately 7.65 seconds. So roughly 168.000.000 rows in total.
+
+---
+
+
+# Measuring Time and Space
+
+Let's summarize where time was spend reading thos 167 Mrows, corresponding to 7.3 GB csv file size and 1.1GB in clickhouse tables size. **If** this would scale linearly, we could process 1TB of data in less than 4.5 hours and store it for 150GB.
+
+| Step                     | time taken   |
+| ---                      | ---          |
+| csv2parquet (duckdb)     |    6.35s     |
+| parallel load2clickhouse |   88.79s     |
+| **Total**                | **95.14**    |
+
+This was probably the moment, when the story of those slides completely changed towards loading speed instead of clickhouse and dbt...
+
+---
+
+## Measuring Time and Space: Postgres Load data
+
+It was just too simple as not to try this in Postgres.
+
+```py
+def insert_data_into_postgres(data):
+    # I left some trivial stuff out for ease of read
+    qry = "insert into raw.meter_halfhourly_dataset_base(id, ts, val) values %s"
+    execute_values(cur, qry, data)
+```
+
+And well, it works. It's slower than for Clickhouse, but faster than parsing the CSV with Python in a sequential manner. If I recall correctly, this needed around 45 minutes (although this sounds way too much more and I guess there was more happening).
+
+So, let's stick to the numbers we've got here.
+
+---
+
+## Measuring Time and Space: With Postgres added
+
+Just for symbolic purposes, let's update the table and have some interim conclusion.
+
+| Step                     | time taken   | postgres |
+| ---                      | ---          | ---      |
+| csv2parquet (duckdb)     |    6.35s     |          |
+| parallel load2clickhouse |   88.79s     | 398.91s  |
+| **Total**                | **95.14**    |          |
+
+So, using duckdb to process CSV files first and store them in a single parquet file with large row groups allows to parallize the import into the target database. The code to do so is almost trivial.
+
+---
+
+## Measuring Time and Space: Postgres detailed Stats
+
+So, let's also have a look at how much time was spend in which part of the process:
+- read (0,1%, 0,03s)
+- transpose (8.6%, 2.99s)
+- insert (91.3%, 31.82s) vs (54.8%, 4.19s) for clickhouse.
+
+Note, that the postgres table has no index, so we can't query the data yet... Nevertheless, it **takes 7.5 times as long**. Creating a table with a bigserial and replacing the id string, takes another 23s + 18m 33s. Maybe, I did something wrong here 😅
+
+Nevertheless, storage needs in Postgres:
+- Base Table: 9.41
+- Indexed Table: 8.15 GB + 5.09 GB Index
+
+So, **compression** saves us a **factor of 12** compared to the 1.1GB in Clickhouse.
 
 ---
 
@@ -74,6 +232,8 @@ Maybe, it becomes tangible here how compression works using column-storage:
 - A single `id` appears repeatedly, so the data structure will only store something like "id x repeats 1000 times here". Thus, there is only little cost of using a String with the external id.
 - At the same time the `ts` has some regularity, such that there's no need to store the unix timestamp itself, but rather the difference between two neighboring rows ([Delta Encoding](https://altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse))
 - Keep in mind, that compression not only reduces storage cost, but additionally reduces the cost of scanning data, as there is simply less to scan.
+- Later, we'll also see that this allows for fast copies of data, when moving data to a new table.
+    - So, let's start to create some tables or models as they are called in dbt.
 
 ---
 
@@ -173,95 +333,6 @@ Core take-away: dbt-defined tables are referenced using the `source` and `ref` s
 
 ---
 
-## Loading Data into Clickhouse Pt.1
-
-Use duckdb to generate one Parquet file from csv regex, with filter large row groups (batches):
-
-```sql
-copy (
-    select
-        "LCLid" as id,
-        "tstp" as ts,
-        "energy(kWh/hh)" as val
-    from read_csv(
-            'data/raw/halfhourly_dataset/halfhourly_dataset/block_*.csv',
-            delim = ',',
-            header = true,
-            nullstr = 'Null',
-            columns ={ 'LCLid': 'VARCHAR', 'tstp': 'TIMESTAMP', 'energy(kWh/hh)': 'FLOAT' }
-        )
-    where "energy(kWh/hh)" is not null
-    )
-    to 'data/ready/halfhourly_dataset.parquet' (
-        format 'parquet',
-        compression 'zstd',
-        row_group_size 2000000
-);
-```
-
----
-
-## Loading Data into Clickhouse Pt.2.1
-
-In the end, the insert will look very familiar:
-
-```py
-def insert_data(data):
-    with Client("localhost") as client:
-        client.execute(
-            query="insert into meterdata_raw.meter_halfhourly_dataset (id, ts, val) values",
-            params=data,
-            types_check=True,
-        )
-```
-
-Note that there is nothing clickhouse specific. But maybe, the parallelization works much better. However, I didn't try this strategy on Postgres yet (not true anymore 🤭). All quality assurance (expect not null requirement) is shifted to within the DWH.
-
----
-
-## Loading Data into Clickhouse Pt.2.2
-
-Each row group is designed to be of around 2 Mrows here. I've added the time and percentange of each step.
-
-```py
-def insert_row_group(args):
-    file_path, row_group_index = args
-
-    # read (0.4%, 0.03s)
-    parquet_file = pq.ParquetFile(file_path)  # Open the Parquet file within the worker process
-    table = parquet_file.read_row_group(row_group_index)
-    table = table.rename_columns(["id", "ts", "val"])
-
-    # transpose (44.8%, 3.43s)
-    data = list(zip(*[tuple(row) for row in table.to_pydict().values()]))  # 😕
-
-    # insert (54.8%, 4.19s)
-    insert_data(data=data)
-```
-
-Still waiting for [ADBC](https://arrow.apache.org/docs/format/ADBC.html), which should make the second step redundant...
-
----
-
-## Loading Data into Clickhouse Pt.2.3
-
-The magic is in the row groups, and allows the single file to be read in parallel from multiple processes without blocking 🤯
-
-```py
-def insert_file_content(table_name: str):
-    file_path = f"data/ready/{table_name}.parquet"
-    parquet_file = pq.ParquetFile(file_path)
-    print(f"Number of row groups: {parquet_file.num_row_groups}")
-    with Pool() as pool:
-        pool.map(
-            insert_row_group,
-            [(file_path, i) for i in range(parquet_file.num_row_groups)],
-        )
-```
-
-Running this on the M1 with 8 cores, takes 90 seconds in total for 84 row groups of 2 Mrows. Each row group takes approximately 7.65 seconds. So roughly 168.000.000 rows in total.
-
----
 
 # Timeseries interpolation PoC
 
@@ -388,6 +459,16 @@ So, let's run our model and see how long it takes.
 
 ---
 
+## Timeseries interpolation: dbt run
+
+Probably a Postgres comparison would be valuable here, but as I've used some Clickhouse specific functions there would be a real kind of "translation" necessary. Nevertheless, I cannot imagine Postgres finish this task in anything close to 18 seconds.
+
+Any operation over the full table instead of single rows of a table should always lead to the OLAP database being on top.
+
+Nevertheless, any operation that retrieves small parts of the table should always favor the OLTP database. So let's have a look at this before fading out.
+
+---
+
 ## Interpolation: Linear interpolation
 
 If intervals of less than 60 minutes are interpolated linearly, this can be done while fetching the data instead of blowing up the table:
@@ -409,35 +490,4 @@ with meterdata as (
 select * from meterdata order by id, ts
 ```
 
-This query returned in 60ms. So, let's summarize timing stuff.
-
----
-
-# Timing
-
-Let's summarize where time was spend reading thos 167 Mrows, corresponding to 7.3 GB csv file size and 1.1GB in clickhouse tables size. **If** this would scale linearly, we could process 1TB of data in less than 4.5 hours.
-
-| Step                     | time taken     | postgres |
-| ---                      | ---            | ---      |
-| csv2parquet (duckdb)     |     6.35s      |          |
-| parallel load2clickhouse |    88.79s      | 398.91s  |
-| interpolation (dbt)      |    17.69s      |          |
-| **Total**                | **112.83s**    |          |
-
----
-
-## Timing and Disk Usage: Postgres
-
-I Couldn't resist the urge to run the same for postgres and calculate the time spend shares:
-- read (0,1%, 0,03s)
-- transpose (8.6%, 2.99s)
-- insert (91.3%, 31.82s) vs (54.8%, 4.19s) for clickhouse.
-
-Note, that the postgres table has no index, so we can't query the data yet... Nevertheless, it **takes 7.5 times as long**.
-Creating a table with a bigserial and replacing the id string, takes another 23s + 18m 33s. Maybe, I did something wrong here 😅
-
-Nevertheless, Storage needs in Postgres:
-- Base Table: 9.41
-- Indexed Table: 8.15 GB + 5.09 GB Index
-
-So, **compression** saves us a **factor of 12** compared to the 1.1GB.
+This query returned in 60ms in PyCharm. Again, I didn't construct the Postgres query, but I would expect it to be faster.

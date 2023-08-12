@@ -61,14 +61,10 @@ def truncate_table(table_name: str):
 
 
 def get_data_from_row_group(file_path, row_group_index):
-    start = time.time()
     parquet_file = pq.ParquetFile(file_path)  # Open the Parquet file within the worker process
     table = parquet_file.read_row_group(row_group_index)
     table = table.rename_columns(["id", "ts", "val"])
-    print(f"read: {time.time() - start:.4f} seconds.")
-    start = time.time()
     data = list(zip(*[tuple(row) for row in table.to_pydict().values()]))
-    print(f"transpose: {time.time() - start:.4f} seconds.")
     return data
 
 
@@ -112,9 +108,7 @@ def insert_data_into_postgres(data):
 def insert_row_group_into_postgres(args):
     file_path, row_group_index = args
     data = get_data_from_row_group(file_path=file_path, row_group_index=row_group_index)
-    start = time.time()
     insert_data_into_postgres(data=data)
-    print(f"insert: {time.time() - start:.4f} seconds.")
 
 
 @measure_execution_time
