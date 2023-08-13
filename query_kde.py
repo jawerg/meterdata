@@ -1,3 +1,4 @@
+import random
 import time
 
 import matplotlib.pyplot as plt
@@ -80,6 +81,8 @@ if __name__ == '__main__':
     pg_interp_results = []
     ch_interp_results = []
 
+    # Run each loop separately, in order to avoid caching results...
+    random.shuffle(device_ids)  # shuffle in order to avoid ordering effects...
     for device_id in device_ids:
         # Execute PostgreSQL queries
         start = time.perf_counter()
@@ -87,16 +90,19 @@ if __name__ == '__main__':
         _ = pg_cursor.fetchall()
         pg_select_results.append(1000 * (time.perf_counter() - start))
 
+    for device_id in device_ids:
         start = time.perf_counter()
         pg_cursor.execute(PG_INTERP_QUERY.format(id=device_id))
         _ = pg_cursor.fetchall()
         pg_interp_results.append(1000 * (time.perf_counter() - start))
 
+    for device_id in device_ids:
         # Execute ClickHouse queries
         start = time.perf_counter()
         _ = ch_client.execute(CH_SELECT_QUERY.format(id=device_id))
         ch_select_results.append(1000 * (time.perf_counter() - start))
 
+    for device_id in device_ids:
         start = time.perf_counter()
         _ = ch_client.execute(CH_INTERP_QUERY.format(id=device_id))
         ch_interp_results.append(1000 * (time.perf_counter() - start))
@@ -125,7 +131,7 @@ if __name__ == '__main__':
     sns.kdeplot(ch_interp_df['query time'], label='ClickHouse', ax=ax[1])
     ax[1].legend()
     ax[1].set_title(f"KDE of Interpolation Query Times (N={len(device_ids)})")
-    ax[0].set_xlim(0, 100)
+    ax[1].set_xlim(0, 100)
 
     plt.savefig(
         "figures/query-kde.png",
