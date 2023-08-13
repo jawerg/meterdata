@@ -7,14 +7,12 @@ theme: default
 
 - showcase of open smart meter data import and interpolation.
 - review process of loading data using duckdb as gateway to parallelism.
-- usage of OLAP database (clickhouse) and dbt for query handling and auto-docs.
-- comparison of ballparks for disk-usage and query speed
+- usage of OLAP database (ClickHouse) and dbt for query handling and auto-docs.
+- comparison of ballparks for disk-usage and query speed against postgres
 
-## Disclaimer
-
-- I've neither used clickhouse or dbt professionally.
-- Thus, the way it's done won't be best practice with high probability.
-- But I guess that was the idea, just try to see what's in there...
+#### Disclaimer
+- I've neither used ClickHouse nor dbt professionally.
+- Some measurements and calculations may be slightly off, but ballpark should be right.
 
 So, let's go 🙃
 
@@ -37,7 +35,7 @@ A quick sample of the [kaggle](https://www.kaggle.com/datasets/jeanmidev/smart-m
 
 # ClickHouse 101
 
-clickhouse...
+ClickHouse...
 
 - was created for real-time analytics of large datasets.
 - has its own SQL dialect and has some fine-grained controls when designing tables (e.g. engines and order by).
@@ -45,7 +43,7 @@ clickhouse...
   - allows for fast aggregation of averages, standard deviations, etc.
 - uses sparse indexes on sorted tables.
   - thus minimal primary key size, despite large table sizes.
-
+- has no transactions
 ---
 
 ## ClickHouse DDL
@@ -70,7 +68,7 @@ Let's talk now about how the data got there and in what time.
 
 ## Loading Data into ClickHouse Pt.1
 
-Use duckdb to generate one Parquet file from csv with filter and large row groups:
+Use duckdb to generate one Parquet file from the 111 csvs with filter and large row groups:
 
 ```sql
 copy (
@@ -103,7 +101,7 @@ Let's quickly walk through how to load the resulting single 335MB parquet file.
 In the end, the insert will look very familiar:
 
 ```py
-from clickhouse_driver import Client
+from ClickHouse_driver import Client
 
 def insert_data(data):
     with Client("localhost") as client:
@@ -114,7 +112,7 @@ def insert_data(data):
         )
 ```
 
-Note that there is nothing clickhouse specific. But maybe, the parallelization works much better. However, I didn't try this strategy on Postgres yet (not true anymore 🤭). Thus, I've completely shifted the focus of the slides to come.
+Note that there is nothing ClickHouse specific. But maybe, the parallelization works much better. However, I didn't try this strategy on Postgres yet (not true anymore 🤭). Thus, I've completely shifted the focus of the slides to come.
 
 ---
 
@@ -165,15 +163,15 @@ Running this on the M1 with 8 cores, takes 90 seconds in total for 84 row groups
 
 # Measuring Time and Space
 
-Let's summarize where time was spend reading thos 167 Mrows, corresponding to 7.3 GB csv file size and 1.1GB in clickhouse tables size. **If** this would scale linearly, we could process 1TB of data in less than 4.5 hours and store it for 150GB.
+Let's summarize where time was spend reading thos 167 Mrows, corresponding to 7.3 GB csv file size and 1.1GB in ClickHouse tables size. **If** this would scale linearly, we could process 1TB of data in less than 4.5 hours and store it for 150GB.
 
 | Step                     | time taken   |
 | ---                      | ---          |
 | csv2parquet (duckdb)     |    6.35s     |
-| parallel load2clickhouse |   88.79s     |
+| parallel load2ClickHouse |   88.79s     |
 | **Total**                | **95.14**    |
 
-This was probably the moment, when the story of those slides completely changed towards loading speed instead of clickhouse and dbt...
+This was probably the moment, when the story of those slides completely changed towards loading speed instead of ClickHouse and dbt...
 
 ---
 
@@ -201,7 +199,7 @@ Just for symbolic purposes, let's update the table and have some interim conclus
 | Step                     | time taken   | postgres |
 | ---                      | ---          | ---      |
 | csv2parquet (duckdb)     |    6.35s     |          |
-| parallel load2clickhouse |   88.79s     | 398.91s  |
+| parallel load2ClickHouse |   88.79s     | 398.91s  |
 | **Total**                | **95.14**    |          |
 
 So, using duckdb to process CSV files first and store them in a single parquet file with large row groups allows to parallize the import into the target database. The code to do so is almost trivial.
@@ -213,7 +211,7 @@ So, using duckdb to process CSV files first and store them in a single parquet f
 So, let's also have a look at how much time was spend in which part of the process:
 - read (0,1%, 0,03s)
 - transpose (8.6%, 2.99s)
-- insert (91.3%, 31.82s) vs (54.8%, 4.19s) for clickhouse.
+- insert (91.3%, 31.82s) vs (54.8%, 4.19s) for ClickHouse.
 
 Note, that the postgres table has no index, so we can't query the data yet... Nevertheless, it **takes 7.5 times as long**. Creating a table with a bigserial and replacing the id string, takes another 23s + 18m 33s. Maybe, I did something wrong here 😅
 
@@ -230,7 +228,7 @@ So, **compression** saves us a **factor of 12** compared to the 1.1GB in ClickHo
 Maybe, it becomes tangible here how compression works using column-storage:
 
 - A single `id` appears repeatedly, so the data structure will only store something like "id x repeats 1000 times here". Thus, there is only little cost of using a String with the external id.
-- At the same time the `ts` has some regularity, such that there's no need to store the unix timestamp itself, but rather the difference between two neighboring rows ([Delta Encoding](https://altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse))
+- At the same time the `ts` has some regularity, such that there's no need to store the unix timestamp itself, but rather the difference between two neighboring rows ([Delta Encoding](https://altinity.com/blog/2019/7/new-encodings-to-improve-ClickHouse))
 - Keep in mind, that compression not only reduces storage cost, but additionally reduces the cost of scanning data, as there is simply less to scan.
 - We'll also see that this allows for **fast copies of data**, when moving data to new tables.
     - So, let's start to create some tables or models as they are called in dbt.
@@ -259,7 +257,7 @@ version: 2
 
 sources:
   - name: meterdata
-    database: meterdata_raw  # note that clickhouse has no notion of a schema
+    database: meterdata_raw  # note that ClickHouse has no notion of a schema
     tables:
       - name: meter_halfhourly_dataset
         columns:
@@ -274,7 +272,7 @@ sources:
 
 ## ClickHouse + dbt: First Model
 
-A model is only a query that results in a table or view and expressed in SQL (here, clickhouse dialect). Let's kick of with a simple candidate here, that shows to the previously defined table will be referenced.
+A model is only a query that results in a table or view and expressed in SQL (here, ClickHouse dialect). Let's kick of with a simple candidate here, that shows to the previously defined table will be referenced.
 
 ```sql
 {{config(order_by=('id'))}}
@@ -289,7 +287,7 @@ group by id
 order by id
 ```
 
-Note that all jinja stuff `{{ }}` is later build (thus build tool) by dbt. The configs are clickhouse specific. Here, a MergeTree is used. If no primary key is given, the order by clause applies.
+Note that all jinja stuff `{{ }}` is later build (thus build tool) by dbt. The configs are ClickHouse specific. Here, a MergeTree is used. If no primary key is given, the order by clause applies.
 
 ---
 
@@ -336,7 +334,7 @@ Core take-away: dbt-defined tables are referenced using the `source` and `ref` s
 
 # Timeseries interpolation PoC
 
-My goal was to completely rely on (clickhouse's) native SQL syntax and avoid any stored procedure.
+My goal was to completely rely on (ClickHouse's) native SQL syntax and avoid any stored procedure.
 The following steps have been taken to do so:
 - Create a row for each timeseries gap larger than 60 minutes with start and end timestamp.
 - Split each of those rows by day to allow to join against the SLP.
