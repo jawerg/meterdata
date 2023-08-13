@@ -35,7 +35,7 @@ A quick sample of the [kaggle](https://www.kaggle.com/datasets/jeanmidev/smart-m
 
 ---
 
-# Clickhouse 101
+# ClickHouse 101
 
 clickhouse...
 
@@ -48,7 +48,7 @@ clickhouse...
 
 ---
 
-## Clickhouse DDL
+## ClickHouse DDL
 
 Imagine we've got some data about [smart meters in London from kaggle](https://www.kaggle.com/datasets/jeanmidev/smart-meters-in-london)
 
@@ -68,7 +68,7 @@ Let's talk now about how the data got there and in what time.
 ---
 
 
-## Loading Data into Clickhouse Pt.1
+## Loading Data into ClickHouse Pt.1
 
 Use duckdb to generate one Parquet file from csv with filter and large row groups:
 
@@ -96,7 +96,7 @@ copy (
 
 ---
 
-## Loading Data into Clickhouse Pt.2.1
+## Loading Data into ClickHouse Pt.2.1
 
 Let's quickly walk through how to load the resulting single 335MB parquet file.
 
@@ -118,7 +118,7 @@ Note that there is nothing clickhouse specific. But maybe, the parallelization w
 
 ---
 
-## Loading Data into Clickhouse Pt.2.2
+## Loading Data into ClickHouse Pt.2.2
 
 Each row group is designed to be of around 2 Mrows here. I've added the time and percentange of each step.
 
@@ -142,7 +142,7 @@ Note that we have **84 row groups** here, the measurements are an **average over
 
 ---
 
-## Loading Data into Clickhouse Pt.2.3
+## Loading Data into ClickHouse Pt.2.3
 
 The magic is in the row groups, and allows the single file to be read in parallel from multiple processes without blocking 🤯
 
@@ -190,7 +190,7 @@ def insert_data_into_postgres(data):
     execute_values(cur, qry, data)
 ```
 
-And well, it works. It's slower than for Clickhouse, but nevertheless a basic proof of concept of how load data into postgres in parallel. The CPUs haven't been cycling at 100% during import.
+And well, it works. It's slower than for ClickHouse, but nevertheless a basic proof of concept of how load data into postgres in parallel. The CPUs haven't been cycling at 100% during import.
 
 ---
 
@@ -221,11 +221,11 @@ Nevertheless, storage needs in Postgres:
 - Base Table: 9.41
 - Indexed Table: 8.15 GB + 5.09 GB Index
 
-So, **compression** saves us a **factor of 12** compared to the 1.1GB in Clickhouse.
+So, **compression** saves us a **factor of 12** compared to the 1.1GB in ClickHouse.
 
 ---
 
-## Clickhouse Compression
+## ClickHouse Compression
 
 Maybe, it becomes tangible here how compression works using column-storage:
 
@@ -250,7 +250,7 @@ dbt is...
 
 ---
 
-## Clickhouse + dbt: Defining a schema
+## ClickHouse + dbt: Defining a schema
 
 dbt must learn about tables that are not managed by it, thus sources are described in yaml notation, which are used to auto-gen docs later.
 
@@ -272,7 +272,7 @@ sources:
 
 ---
 
-## Clickhouse + dbt: First Model
+## ClickHouse + dbt: First Model
 
 A model is only a query that results in a table or view and expressed in SQL (here, clickhouse dialect). Let's kick of with a simple candidate here, that shows to the previously defined table will be referenced.
 
@@ -293,7 +293,7 @@ Note that all jinja stuff `{{ }}` is later build (thus build tool) by dbt. The c
 
 ---
 
-## Clickhouse + dbt: Second Model
+## ClickHouse + dbt: Second Model
 
 Another quite simple example, which will however help us to illustrate how tests work in the next step:
 
@@ -316,11 +316,11 @@ order by dt, ts
 
 ---
 
-## Clickhouse + dbt: First Test
+## ClickHouse + dbt: First Test
 
 Oftentimes, tests in SQL are defined, such that the expected result is empty. This allows to test for unexpected data. Here, I want the standard load profile to be in one hour intervals from the first to last timestamp.
 
-Clickhouse's neighbor keyword: Similar to Postgres' `lead(ts) over (partition by id order by ts)`. Recall that the order by clause is set in the table definition, which enables this to be fast ⚡️
+ClickHouse's neighbor keyword: Similar to Postgres' `lead(ts) over (partition by id order by ts)`. Recall that the order by clause is set in the table definition, which enables this to be fast ⚡️
 
 ```sql
 select ts
@@ -371,7 +371,7 @@ Why 30 min: 11:30 - 12:30 is only an hour, but 11:00 is missing. Before we've fi
 
 ## Timeseries interpolation: Split Gaps by Day
 
-Main Takeaway: Clickhouse has some useful built-in functions:
+Main Takeaway: ClickHouse has some useful built-in functions:
 
 ```sql
 select
@@ -459,9 +459,34 @@ So, let's run our model and see how long it takes.
 
 ---
 
+## Timeseries interpolation: SLP calculation in Postgres
+
+You know, I like this type of comparison. The following query takes 3.8s in ClickHouse and 350s in Postgres on the indexed table. That's a factor of **92**. Just to take on the OLAP style query performance benefit...
+
+```sql
+INSERT INTO slp.standard_load_profile
+WITH years AS (
+    SELECT DISTINCT extract(YEAR FROM ts)::INTEGER AS year
+    FROM raw.meter_halfhourly_dataset
+)
+SELECT
+    make_date(years.year, extract(MONTH FROM ts)::INTEGER, extract(DAY FROM ts)::INTEGER) AS dt,
+    make_timestamptz(
+        years.year, extract(MONTH FROM ts)::INTEGER, extract(DAY FROM ts)::INTEGER,
+        extract(HOUR FROM ts)::INTEGER, 0, 0, 'UTC'
+        ) AS ts,
+    avg(val) AS val
+FROM raw.meter_halfhourly_dataset CROSS JOIN years
+WHERE extract(MONTH FROM ts)::INTEGER != 2 and extract(DAY FROM ts)::INTEGER != 29
+GROUP BY years.year, dt, ts ORDER BY dt, ts;
+```
+
+---
+
+
 ## Timeseries interpolation: dbt run
 
-Probably a Postgres comparison would be valuable here, but as I've used some Clickhouse specific functions there would be a real kind of "translation" necessary. Nevertheless, I cannot imagine Postgres finish this task in anything close to 18 seconds.
+Probably a Postgres comparison would be valuable here, but as I've used some ClickHouse specific functions there would be a real kind of "translation" necessary. Nevertheless, I cannot imagine Postgres finish this task in anything close to 18 seconds.
 
 Any operation over the full table instead of single rows of a table should always lead to the OLAP database being on top.
 
@@ -475,6 +500,7 @@ If intervals of less than 60 minutes are interpolated linearly, this can be done
 
 ```sql
 with meterdata as (
+    -- This first part will be called "Simple Select" two slides later.
     select id, ts, val
     from meterdata.target
     where id = 'MAC005558'
@@ -491,3 +517,56 @@ select * from meterdata order by id, ts
 ```
 
 This query returned in 60ms in PyCharm. Again, I didn't construct the Postgres query, but I would expect it to be faster.
+
+---
+
+## Interpolation: Linear Interpolation Query in Postgres
+
+Same story as always, I just wanted to know:
+
+```sql
+WITH meterdata AS (
+    -- This first part will be called "Simple Select" on the next slide.
+    SELECT id, ts, val
+    FROM raw.meter_halfhourly_dataset
+    WHERE id = ( select id from raw.device_ids where device_id = 'MAC005558')
+
+    UNION ALL
+
+    SELECT id, ts + INTERVAL '30 minute' AS ts, (val + LEAD(val) OVER (PARTITION BY id ORDER BY ts)) / 2 AS val
+    FROM (
+        SELECT
+            id, ts, val,
+            LEAD(ts) OVER (PARTITION BY id ORDER BY ts) AS next_ts,
+            LEAD(val) OVER (PARTITION BY id ORDER BY ts) AS next_val
+        FROM raw.meter_halfhourly_dataset
+        WHERE id = ( select id from raw.device_ids where device_id = 'MAC005558')
+    ) AS subquery
+    WHERE next_ts - ts = INTERVAL '1 hour' AND next_val IS NOT NULL
+)
+SELECT * FROM meterdata ORDER BY id, ts;
+```
+
+---
+
+## Point Queries: Postgres vs Clickhouse
+
+Note that I didn't fill the gaps in Postgres, so there is strictly less data. I must confess I'm a bit surprised by those benchmarks. Maybe, it is as we are selecting complete timeseries instead of a single row...
+
+![Query Benchmarking](figures/query-kde.png)
+
+---
+
+# Summary
+
+- **Point Queries**:
+    - I did all comparisons against basic postgres, and not Timescale.
+    - Point queries took full length of timeseries and not months or alike.
+    - Nevertheless, I'd argue they are **on par** for the type of query we're interested in.
+- Storage claims will be unaffected by that:
+    - Clickhouse spares **disk space** by a **factor of 12**
+- Aggregation queries seems to be almost **two orders of magnitude** faster.
+- **Insertion** is faster by a **factor of 7.5**
+    - Neverthess, I'm still hoping for a [ADBC](https://arrow.apache.org/docs/format/ADBC.html) implementation in ClickHouse...
+
+- I think it's worth moving the historic timeseries processing to ClickHouse.

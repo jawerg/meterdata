@@ -3,7 +3,7 @@
 
 with years as (
     select distinct year(ts) as year
-    from {{ ref('clean_source_data') }}
+    from raw.meter_halfhourly_dataset_base
 )
 select
     makeDate(
@@ -21,7 +21,7 @@ select
         'UTC'
     ) as ts,
     avg(val) as val
-from {{ ref('clean_source_data') }}
+from raw.meter_halfhourly_dataset_base
      cross join years
 group by dt, ts
 order by dt, ts
