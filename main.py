@@ -10,30 +10,11 @@ from clickhouse_driver import Client
 import subprocess
 
 
-def measure_execution_time(func):
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        result = func(*args, **kwargs)
-
-        if "time_tracking" not in globals():
-            globals()["time_tracking"] = dict()
-
-        if func.__name__ not in globals()["time_tracking"]:
-            globals()["time_tracking"][func.__name__] = list()
-
-        globals()["time_tracking"][func.__name__].append(time.time() - start_time)
-
-        return result
-
-    return wrapper
-
-
 def print_time_tracking_count_and_average():
     for func_name, times in globals()["time_tracking"].items():
         print(f"{func_name}: {len(times)} calls, {sum(times) / len(times)} avg. time")
 
 
-@measure_execution_time
 def derive_parquet_data_from_csv_with_ddb_query(table_name: str):
     with duckdb.connect(database=":memory:") as conn:
         query_file_path = Path("queries") / "ddb" / f"{table_name}.sql"
@@ -41,20 +22,17 @@ def derive_parquet_data_from_csv_with_ddb_query(table_name: str):
             conn.execute(qry_file.read())
 
 
-@measure_execution_time
 def truncate_table(table: str):
     with Client("localhost") as client:
         client.execute(query=f"truncate table {table}")
 
 
-@measure_execution_time
 def filter_table_by_year(table: pa.Table, year: int):
     year_array = pc.year(table.column("ts"))
     mask = pc.equal(year_array, pa.scalar(year))
     return table.filter(mask)
 
 
-@measure_execution_time
 def get_data_from_row_group(file_path, year, row_group_index):
     parquet_file = pq.ParquetFile(
         file_path
@@ -65,7 +43,6 @@ def get_data_from_row_group(file_path, year, row_group_index):
     return data
 
 
-@measure_execution_time
 def insert_data(data):
     with Client("localhost") as client:
         client.execute(
@@ -85,7 +62,6 @@ def insert_row_group(args):
     insert_data(data=data)
 
 
-@measure_execution_time
 def insert_file_content(table_name: str, year: int):
     file_path = f"data/ready/{table_name}.parquet"
     parquet_file = pq.ParquetFile(file_path)
@@ -104,7 +80,7 @@ def get_row_count(table: str):
 
 if __name__ == "__main__":
     truncate_table(table="meterdata.target")
-    # derive_parquet_data_from_csv_with_ddb_query(table_name=f"halfhourly_dataset")
+    derive_parquet_data_from_csv_with_ddb_query(table_name=f"halfhourly_dataset")
 
     for y in [2011, 2012, 2013, 2014]:
         row_count = get_row_count(table="meterdata_raw.meter_halfhourly_dataset")
