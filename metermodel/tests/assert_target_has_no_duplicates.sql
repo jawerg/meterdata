@@ -1,6 +1,6 @@
 with baseline as (
     select id, ts
-    from {{ ref('clean_source_data') }}
+    from {{ source('meterdata', 'meter_halfhourly_dataset') }}
 
     union all
 

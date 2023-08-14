@@ -1,16 +1,16 @@
-{{config(order_by=('id', 'ts'))}}
-
-with
-data_union as (
-    select id, ts, val
-    from {{ ref('clean_source_data') }}
-
-    union all
-
-    select id, ts, val
-    from {{ ref('interpolation_long_intervals') }}
-)
+{{
+    config(
+        materialized='incremental',
+        order_by=('id', 'ts'),
+        unique_key='id, ts',
+        incremental_strategy='append'
+    )
+}}
 
 select id, ts, val
-from data_union
-order by id, ts
+from {{ source('meterdata', 'meter_halfhourly_dataset') }}
+
+union all
+
+select id, ts, val
+from {{ ref('interpolation_long_intervals') }}

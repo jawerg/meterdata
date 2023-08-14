@@ -11,6 +11,7 @@ copy (
             columns ={ 'LCLid': 'VARCHAR', 'tstp': 'TIMESTAMP', 'energy(kWh/hh)': 'FLOAT' }
         )
     where "energy(kWh/hh)" is not null
+      and date_part('minute', "tstp") in (0, 30)
     )
     to 'data/ready/halfhourly_dataset.parquet' (
         format 'parquet',

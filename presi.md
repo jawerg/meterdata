@@ -357,7 +357,7 @@ select
     neighbor(ts, 1) as next_ts,
     val,
     neighbor(val, 1) as next_val
-from {{ ref('clean_source_data') }}
+from {{ source('meterdata', 'meter_halfhourly_dataset') }}
 where next_ts - ts > 30 * 60 -- fill gaps larger than 30 mins
   and neighbor(id, 1) = id
 order by id, ts
