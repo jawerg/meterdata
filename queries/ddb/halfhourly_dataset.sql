@@ -12,9 +12,10 @@ copy (
         )
     where "energy(kWh/hh)" is not null
       and date_part('minute', "tstp") in (0, 30)
+      and year("tstp") = {{ year }}
     )
-    to 'data/ready/halfhourly_dataset.parquet' (
+    to 'data/ready/halfhourly_dataset_{{ year }}.parquet' (
         format 'parquet',
         compression 'zstd',
-        row_group_size 2000000
+        row_group_size 1000000
 );

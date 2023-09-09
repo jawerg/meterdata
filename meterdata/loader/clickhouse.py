@@ -5,24 +5,12 @@ from clickhouse_driver import Client
 from pyarrow import parquet as pq
 
 from meterdata.loader.common import (
-    get_data_from_row_group,
     write_execution_time,
+    get_row_group,
+    pyarrow_table_to_pylist,
 )
 
 CH_BASE_TABLE = "meterdata_raw.meter_halfhourly_dataset"
-
-
-def ch_get_row_count(table: str):
-    start = time.perf_counter()
-
-    with Client("localhost") as client:
-        n_rows = client.execute(f"select count(*) from {table}")[0][0]
-
-    write_execution_time(
-        exec_time=time.perf_counter() - start,
-        function_name=ch_get_row_count.__name__,
-    )
-    return n_rows
 
 
 def ch_truncate_table(table: str):
@@ -37,7 +25,7 @@ def ch_truncate_table(table: str):
     )
 
 
-def ch_insert_data(data):
+def ch_insert_data(data: list[str, str, float], year: int, row_group: int):
     start = time.perf_counter()
 
     with Client("localhost") as client:
@@ -50,19 +38,19 @@ def ch_insert_data(data):
     write_execution_time(
         exec_time=time.perf_counter() - start,
         function_name=ch_insert_data.__name__,
+        n_rows=len(data),
+        year=year,
+        row_group=row_group,
     )
 
 
 def ch_insert_row_group(args):
     start = time.perf_counter()
 
-    file_path, year, row_group_index = args
-    data = get_data_from_row_group(
-        file_path=file_path,
-        year=year,
-        row_group_index=row_group_index,
-    )
-    ch_insert_data(data=data)
+    file_path, year, row_group = args
+    table = get_row_group(file_path=file_path, year=year, row_group=row_group)
+    data = pyarrow_table_to_pylist(table=table)
+    ch_insert_data(data=data, year=year, row_group=row_group)
 
     write_execution_time(
         exec_time=time.perf_counter() - start,
@@ -73,7 +61,7 @@ def ch_insert_row_group(args):
 def ch_insert_file_content(table_name: str, year: int):
     start = time.perf_counter()
 
-    file_path = f"data/ready/{table_name}.parquet"
+    file_path = f"data/ready/{table_name}_{year}.parquet"
     parquet_file = pq.ParquetFile(file_path)
     with Pool() as pool:
         pool.map(
