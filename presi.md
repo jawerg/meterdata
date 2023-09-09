@@ -53,10 +53,10 @@ Imagine we've got some data about [smart meters in London from kaggle](https://w
 ```sql
 create or replace table meterdata_raw.meter_halfhourly_dataset (
     id  String,
-    ts  DateTime('UTC'),
+    ts  DateTime('UTC') CODEC(Delta, ZSTD),
     val Float32
 )
-engine = MergeTree
+engine = ReplacingMergeTree
 primary key (id, ts)
 order by (id, ts);
 ```
@@ -88,7 +88,7 @@ copy (
     to 'data/ready/halfhourly_dataset.parquet' (
         format         'parquet',
         compression    'zstd',
-        row_group_size 2000000  -- this one does the magic trick 🪄
+        row_group_size 1000000  -- this one does the magic trick 🪄
 );
 ```
 
@@ -124,19 +124,19 @@ Each row group is designed to be of around 2 Mrows here. I've added the time and
 def insert_row_group(args):
     file_path, row_group_index = args
 
-    # read (0.4%, 0.03s)
+    # read (0.4%, 0.01s)
     parquet_file = pq.ParquetFile(file_path)  # Open the Parquet file within the worker process
     table = parquet_file.read_row_group(row_group_index)
-    table = table.rename_columns(["id", "ts", "val"])
 
-    # transpose (44.8%, 3.43s)
+    # transpose (43,3%, 1.23s)
     data = list(zip(*[tuple(row) for row in table.to_pydict().values()]))  # 😕
 
-    # insert (54.8%, 4.19s)
+    # insert (56,3%, 1.60s)
     insert_data(data=data)
 ```
 
-Note that we have **84 row groups** here, the measurements are an **average over those 84 runs**.
+Note that we have **170 row groups** here, the measurements are an average over those 170 calls.
+Half the time is spend converting the pyarrow table to a list for the insert... That's tragic.
 
 ---
 
@@ -156,70 +156,65 @@ def insert_file_content(table_name: str):
         )
 ```
 
-Running this on the M1 with 8 cores, takes 90 seconds in total for 84 row groups of 2 Mrows. Each row group takes approximately 7.65 seconds. So roughly 168.000.000 rows in total.
+Running this on the M1 with 8 cores, takes less than 100 seconds in total for 170 row groups of 1 Mrows. Each row group takes approximately 2,84 seconds. So roughly 168.000.000 rows in total.
 
 ---
 
 
 # Measuring Time and Space
 
-Let's summarize where time was spend reading thos 167 Mrows, corresponding to 7.3 GB csv file size and 1.1GB in ClickHouse tables size. **If** this would scale linearly, we could process 1TB of data in less than 4.5 hours and store it for 150GB.
+Let's summarize where time was spend reading those 167 Mrows, corresponding to 7.3 GB csv file size and 475.35MB in ClickHouse tables size.
 
-| Step                     | time taken   |
-| ---                      | ---          |
-| csv2parquet (duckdb)     |    6.35s     |
-| parallel load2ClickHouse |   88.79s     |
-| **Total**                | **95.14**    |
+| Step                 | time taken   |
+| ---                  | ---          |
+| csv2parquet (duckdb) |    19.5s     |
+| insert into          |   272.2s     |
+| **Total**            | **291.7s**   |
 
-This was probably the moment, when the story of those slides completely changed towards loading speed instead of ClickHouse and dbt...
-
----
-
-## Measuring Time and Space: Postgres Load data
-
-It was just too simple as not to try this in Postgres.
-
-```py
-from psycopg2.extras import execute_values
-
-def insert_data_into_postgres(data):
-    # I left some trivial stuff out for ease of read
-    qry = "insert into raw.meter_halfhourly_dataset_base(id, ts, val) values %s"
-    execute_values(cur, qry, data)
-```
-
-And well, it works. It's slower than for ClickHouse, but nevertheless a basic proof of concept of how load data into postgres in parallel. The CPUs haven't been cycling at 100% during import.
+Note that we can parallelize this perfectly, thus we can device the parallel step by the number of available cores.
 
 ---
 
 ## Measuring Time and Space: With Postgres added
 
-Just for symbolic purposes, let's update the table and have some interim conclusion.
+It was just too simple as not to try this in Postgres. Just for symbolic purposes, let's update the table and have some interim conclusion.
 
-| Step                     | time taken   | postgres |
-| ---                      | ---          | ---      |
-| csv2parquet (duckdb)     |    6.35s     |          |
-| parallel load2ClickHouse |   88.79s     | 398.91s  |
-| **Total**                | **95.14**    |          |
+| Step                 | time taken   | postgres     |
+| ---                  | ---          | ---          |
+| csv2parquet (duckdb) |    19.5s     |              |
+| insert into          |   272.2s     | 3503.5s      |
+| **Total**            | **291.7s**   | **+3231.3s** |
 
-So, using duckdb to process CSV files first and store them in a single parquet file with large row groups allows to parallize the import into the target database. The code to do so is almost trivial.
+That's a factor of more than **12** and there's no sign of slowdown on this advantage in table size. The numbers do only relate to the insert into query, not the load ot transpose parts. Recall that this is perfectly parallelizable using the row groups.
 
 ---
 
-## Measuring Time and Space: Postgres detailed Stats
+## Digression: DDL of PostreSQL Tables
 
-So, let's also have a look at how much time was spend in which part of the process:
-- read (0,1%, 0,03s)
-- transpose (8.6%, 2.99s)
-- insert (91.3%, 31.82s) vs (54.8%, 4.19s) for ClickHouse.
+```sql
+create table core.devices (
+    id   uuid         primary key,
+    name varchar(255) not null
+);
 
-Note, that the postgres table has no index, so we can't query the data yet... Nevertheless, it **takes 7.5 times as long**. Creating a table with a bigserial and replacing the id string, takes another 23s + 18m 33s. Maybe, I did something wrong here 😅
+create table core.measurements (
+    device_id uuid                        references core.devices(id),
+    ts        timestamp without time zone not null,
+    val       float4                      not null,
+    primary key (device_id, ts)
+);
+```
 
-Nevertheless, storage needs in Postgres:
-- Base Table: 9.41
-- Indexed Table: 8.15 GB + 5.09 GB Index
+---
 
-So, **compression** saves us a **factor of 12** compared to the 1.1GB in ClickHouse.
+## Measuring Space: Postgres Table Sizes
+
+Note that we've got only one table in Clickhouse, but the size of the devices table in postgres is negligible:
+- ch: 475MB
+- pg: 20.65GB total table size with 11.24GB index size
+
+So, **compression** saves us a **factor of 44** compared to the 475MB in ClickHouse.
+I cannot overstate how magical this feels, and later we'll see that the queries aren't even slower...
 
 ---
 
@@ -562,9 +557,9 @@ Note that I didn't fill the gaps in Postgres, so there is strictly less data. I 
     - Point queries took full length of timeseries and not months or alike.
     - Nevertheless, I'd argue they are **on par** for the type of query we're interested in.
 - Storage claims will be unaffected by that:
-    - Clickhouse spares **disk space** by a **factor of 12**
+    - Clickhouse spares **disk space** by a **factor of 44**
 - Aggregation queries seems to be almost **two orders of magnitude** faster.
-- **Insertion** is faster by a **factor of 7.5**
+- **Insertion** is faster by a **factor of 12**
     - Neverthess, I'm still hoping for a [ADBC](https://arrow.apache.org/docs/format/ADBC.html) implementation in ClickHouse...
 
 - I think it's worth moving the historic timeseries processing to ClickHouse.

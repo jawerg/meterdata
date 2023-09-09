@@ -14,7 +14,7 @@ create or replace table meterdata.timeseries
     id  String,
     ts  DateTime('UTC') CODEC(Delta, ZSTD),
     val Float32,
-    loaded_at DateTime('UTC'),
+    loaded_at DateTime('UTC') CODEC(ZSTD(16)),
     is_synthetic Boolean
 )
     engine = ReplacingMergeTree()

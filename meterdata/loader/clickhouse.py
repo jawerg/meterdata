@@ -48,7 +48,7 @@ def ch_insert_row_group(args):
     start = time.perf_counter()
 
     file_path, year, row_group = args
-    table = get_row_group(file_path=file_path, year=year, row_group=row_group)
+    table = get_row_group(file_path=file_path, row_group=row_group)
     data = pyarrow_table_to_pylist(table=table)
     ch_insert_data(data=data, year=year, row_group=row_group)
 
@@ -63,7 +63,7 @@ def ch_insert_file_content(table_name: str, year: int):
 
     file_path = f"data/ready/{table_name}_{year}.parquet"
     parquet_file = pq.ParquetFile(file_path)
-    with Pool() as pool:
+    with Pool(4) as pool:
         pool.map(
             ch_insert_row_group,
             [(file_path, year, i) for i in range(parquet_file.num_row_groups)],

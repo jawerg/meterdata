@@ -3,7 +3,7 @@ from pathlib import Path
 
 import duckdb
 import pyarrow as pa
-from pyarrow import parquet as pq
+import pyarrow.parquet as pq
 
 
 def create_empty_exec_time_file():
@@ -22,7 +22,8 @@ def write_execution_time(
     with open("exec_time.csv", "a") as f:
         if n_rows:
             f.write(f"{function_name},{exec_time},{n_rows},{year},{row_group}\n")
-        f.write(f"{function_name},{exec_time}\n")
+        else:
+            f.write(f"{function_name},{exec_time}\n")
 
 
 def derive_parquet_data_from_csv_with_ddb_query(table_name: str, years: list[int]):
@@ -40,7 +41,7 @@ def derive_parquet_data_from_csv_with_ddb_query(table_name: str, years: list[int
     )
 
 
-def get_row_group(file_path, year, row_group):
+def get_row_group(file_path, row_group):
     start = time.perf_counter()
 
     parquet_file = pq.ParquetFile(file_path)  # Open file within the worker process!
