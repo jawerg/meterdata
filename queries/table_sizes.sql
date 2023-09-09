@@ -24,4 +24,5 @@ from (
     where active
     group by database, table ) parts
     on columns.table = parts.table
+where table like '%meter%' or table like '%timeseries%'
 order by parts.bytes_size desc;

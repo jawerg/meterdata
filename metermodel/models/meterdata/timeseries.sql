@@ -7,10 +7,10 @@
     )
 }}
 
-select id, ts, val
+select id, ts, val, now() as loaded_at, false as is_synthetic
 from {{ source('meterdata', 'meter_halfhourly_dataset') }}
 
 union all
 
-select id, ts, val
+select id, ts, val, now() as loaded_at, true as is_synthetic
 from {{ ref('interpolation_long_intervals') }}
