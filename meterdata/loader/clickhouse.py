@@ -63,7 +63,7 @@ def ch_insert_file_content(table_name: str, year: int):
 
     file_path = f"data/ready/{table_name}_{year}.parquet"
     parquet_file = pq.ParquetFile(file_path)
-    with Pool(4) as pool:
+    with Pool(6) as pool:
         pool.map(
             ch_insert_row_group,
             [(file_path, year, i) for i in range(parquet_file.num_row_groups)],

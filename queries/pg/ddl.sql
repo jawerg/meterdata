@@ -1,3 +1,4 @@
+create schema core;
 create table core.devices (
     id uuid primary key,
     name varchar(255) not null
